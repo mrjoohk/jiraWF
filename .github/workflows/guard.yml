@@ -1,0 +1,58 @@
+name: guard
+
+# 이 저장소는 public입니다. 개인 업무 데이터가 커밋되는 것을 막는 마지막 방어선입니다.
+# 1차 방어는 작업 폴더를 저장소 밖에 두는 것(wf-init), 2차는 .gitignore, 이것이 3차입니다.
+# 사람의 주의력에 기대지 않는 유일한 층이므로 실패 시 병합을 막습니다.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  no-work-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 금지 경로 검사
+        run: |
+          # git ls-files 이므로 .gitignore 대상(__pycache__ 등)은 애초에 포함되지 않는다.
+          bad=$(git ls-files \
+            | grep -E '(^|/)(daily|weekly|logs)/|(^|/)\.workflow/|(^|/)state\.json$|(^|/)jira_project_key_id\.txt$' \
+            || true)
+          if [ -n "$bad" ]; then
+            echo "::error::업무 데이터로 보이는 파일이 커밋되었습니다:"
+            echo "$bad"
+            exit 1
+          fi
+          echo "금지 경로 없음"
+
+      - name: 실 이슈 키 검사
+        run: |
+          # 문서·예시는 XXX- 접두사만 씁니다. 그 외 대문자키-숫자는 실제 Jira 키로 간주합니다.
+          # 허용 접두사: XXX(예시), INV(불변식 ID), UTF(인코딩)
+          hits=$(git ls-files -z \
+            | xargs -0 grep -nHE '\b[A-Z]{2,9}-[0-9]+\b' 2>/dev/null \
+            | grep -vE '\b(XXX|INV|UTF)-[0-9]+\b' || true)
+          if [ -n "$hits" ]; then
+            echo "::error::실제 Jira 이슈 키로 보이는 문자열이 있습니다. 예시는 XXX-000 형식을 쓰십시오:"
+            echo "$hits"
+            exit 1
+          fi
+          echo "실 이슈 키 없음"
+
+  scripts-sane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: 문법 검사
+        run: python -m compileall -q plugins/jira-worklog/scripts
+      - name: 매니페스트 JSON 검사
+        run: |
+          python -c "import json;json.load(open('.claude-plugin/marketplace.json'))"
+          python -c "import json;json.load(open('plugins/jira-worklog/.claude-plugin/plugin.json'))"
+      - name: 회귀 시험 (INV 음성 대조)
+        run: bash tests/run_tests.sh

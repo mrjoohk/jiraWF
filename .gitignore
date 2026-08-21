@@ -1,0 +1,15 @@
+# ── 개인 업무 데이터 — 절대 커밋 금지 (public 저장소) ────────────────
+# 이 저장소는 public입니다. 아래 항목이 커밋되면 사내 업무 내용이
+# 인터넷에 공개됩니다. .github/workflows/guard.yml이 2차 방어입니다.
+daily/
+weekly/
+.workflow/
+state.json
+jira_project_key_id.txt
+*.raw.json
+
+# ── 일반 ──────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+.DS_Store
+.env

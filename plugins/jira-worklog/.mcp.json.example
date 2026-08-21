@@ -1,0 +1,9 @@
+{
+  "_comment": "이 파일은 기본 경로가 아닙니다. Cowork/Claude 앱에서 Atlassian 커넥터를 직접 연결하는 것이 1순위이며, 그 경우 이 파일은 필요 없습니다(중복 서버가 생겨 오히려 혼란). CLI 등에서 수동 등록이 필요할 때만 .mcp.json 으로 복사해 사용하고, 인증 토큰은 절대 여기에 적지 마십시오.",
+  "mcpServers": {
+    "atlassian": {
+      "type": "http",
+      "url": "<Atlassian MCP 서버 URL — 각자 환경에서 확인>"
+    }
+  }
+}
