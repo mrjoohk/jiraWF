@@ -65,6 +65,44 @@ def in_scope(iss, project_key, epic_key):
     return True
 
 
+def compile_patterns(patterns, field):
+    """제목 필터 정규식을 미리 컴파일한다.
+
+    잘못된 정규식을 만나면 **중단한다.** 조용히 건너뛰면 그 폴더는 필터가
+    없는 것처럼 동작해 옆 폴더의 태스크까지 끌어안게 되고, 그 사실이
+    아무 데도 남지 않는다.
+    """
+    out = []
+    for pat in patterns:
+        try:
+            out.append(re.compile(pat, re.IGNORECASE))
+        except re.error as exc:
+            print(f"{field}의 정규식이 잘못되었다: {pat!r} — {exc}",
+                  file=sys.stderr)
+            raise SystemExit(2)
+    return out
+
+
+def title_match(iss, include, exclude):
+    """제목 필터를 통과하는가.
+
+    같은 에픽을 여러 폴더가 제목으로 나눠 맡을 때 쓴다. 파생(Sub-task)은
+    제목 규약을 따르지 않으므로 면제한다 — 어차피 root 아래에 붙는다.
+
+    include가 비어 있으면 "전부 통과"다. 두 폴더가 각각 include만 쓰면
+    어느 쪽에도 안 걸리는 태스크가 조용히 사라지므로, 한쪽은 exclude로
+    나머지를 맡게 하는 편이 안전하다.
+    """
+    if iss.get("is_subtask"):
+        return True
+    summary = iss.get("summary") or ""
+    if include and not any(r.search(summary) for r in include):
+        return False
+    if any(r.search(summary) for r in exclude):
+        return False
+    return True
+
+
 def next_root_id(roots):
     used = [int(m.group(1)) for k in roots for m in [re.fullmatch(r"R-(\d+)", k)] if m]
     return "R-%03d" % ((max(used) + 1) if used else 1)
@@ -114,6 +152,18 @@ def main():
                   if i["key"] and not in_scope(i, project_key, epic_key)})
     changed = [i for i in changed if in_scope(i, project_key, epic_key)]
     open_ = [i for i in open_ if in_scope(i, project_key, epic_key)]
+
+    # 제목 필터는 스코프 위반이 아니다. 같은 에픽을 나눠 맡기로 한 결과이므로
+    # 배치를 멈추지 않는다. 대신 제외된 키를 남겨, 어느 폴더도 맡지 않은
+    # 태스크가 생겼을 때 사람이 알아볼 수 있게 한다.
+    title_include = state.get("title_include") or []
+    title_exclude = state.get("title_exclude") or []
+    inc = compile_patterns(title_include, "title_include")
+    exc = compile_patterns(title_exclude, "title_exclude")
+    dropped = sorted({i["key"] for i in open_
+                      if i["key"] and not title_match(i, inc, exc)})
+    changed = [i for i in changed if title_match(i, inc, exc)]
+    open_ = [i for i in open_ if title_match(i, inc, exc)]
 
     changed_keys = {i["key"] for i in changed if i["key"]}
 
@@ -190,8 +240,10 @@ def main():
         "today_local_ids": today_ids,
         "counts": counts,
         "scope": {"project_key": project_key, "epic_key": epic_key,
-                  "epic_name": epic_scope_name},
+                  "epic_name": epic_scope_name,
+                  "title_include": title_include, "title_exclude": title_exclude},
         "out_of_scope": {"count": len(oos), "keys": oos},
+        "title_filtered": {"count": len(dropped), "keys": dropped},
         "epics": sorted(epics.values(), key=lambda e: (e["epic_name"] or "")),
         "all_issue_keys": sorted({r["key"] for r in flat}
                                  | {c["jira_key"] for r in flat
@@ -208,12 +260,17 @@ def main():
     scope_txt = project_key or "(프로젝트 미지정)"
     if epic_key:
         scope_txt += f" / 에픽 {epic_key}"
+    if title_include or title_exclude:
+        scope_txt += " / 제목필터"
     print(f"aggregate: [{scope_txt}] root {len(flat)}건 "
           f"(신규 {counts['new']} / 이어서 {counts['continuing']} / 정체 {counts['stalled']}), "
           f"미등록 파생 {counts['children_pending']}건 → {a.out}")
     if oos:
         print(f"  주의: 스코프 밖 {len(oos)}건을 제외했다 — {', '.join(oos[:5])}"
               f"{' 외' if len(oos) > 5 else ''}. 조회 JQL을 확인하십시오.")
+    if dropped:
+        print(f"  제목 필터로 {len(dropped)}건이 이 폴더에서 빠졌다: "
+              f"{', '.join(dropped)}. 다른 폴더가 맡고 있는지 확인하십시오.")
     return 0
 
 

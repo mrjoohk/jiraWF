@@ -29,6 +29,13 @@ description: jira-worklog 최초 1회 초기화 — 커넥터 확인, 프로젝�
 - 좁히면: `project = {KEY} AND parent = "{에픽키}"`로 실제 조회해 건수를 확인하고 `epic_key`·`epic_name`에 기록한다. 0건이면 에픽 키가 맞는지 되묻는다.
 - 좁히지 않으면: `epic_key`를 `null`로 두고 프로젝트 전체를 맡는다.
 
+**같은 에픽을 두 폴더가 나눠 맡아야 한다면** 제목으로 가른다. `title_include`·`title_exclude`에 정규식 목록을 받는다(대소문자 무시, 빈 목록이면 필터 없음).
+
+- `title_include`: 이 중 하나라도 제목에 걸리면 이 폴더가 맡는다
+- `title_exclude`: 걸리면 이 폴더가 맡지 않는다
+
+**두 폴더가 각각 `title_include`만 쓰면 안 된다.** 어느 쪽 패턴에도 안 걸리는 제목이 생기면 그 태스크는 어느 폴더에도 안 잡히고, 그 사실이 아무 데도 남지 않는다. 한쪽을 `title_include`로, **다른 한쪽을 같은 패턴의 `title_exclude`로** 두어 둘이 합쳐 빠짐없이 덮게 한다. 이때 제목 규약(예: 접두사)을 먼저 정하고 기존 태스크 제목도 거기에 맞춰야 한다.
+
 **같은 프로젝트를 다른 폴더가 이미 쓰고 있다면 에픽 지정은 선택이 아니다.** 범위가 겹치면 두 폴더가 같은 태스크를 각자 추적하고, 마감 때 같은 태스크에 하위 티켓이 두 번 생긴다. 되돌리기 비용이 큰 쪽이므로, 겹치지 않는지 사용자에게 **명시적으로 확인받는다.** (겹친 채로 실행되면 `INV-5`가 배치를 멈추지만, 그건 마지막 방어선이다.)
 
 ## 4. 프로젝트 유형·이슈 타입 판별 — 이 명령의 핵심
@@ -49,13 +56,14 @@ description: jira-worklog 최초 1회 초기화 — 커넥터 확인, 프로젝�
 ## 6. state.json
 없으면 생성한다.
 ```json
-{"schema_version": 2, "watermark": "<현재 시각 ISO8601>", "last_success": null,
+{"schema_version": 3, "watermark": "<현재 시각 ISO8601>", "last_success": null,
  "project_key": "...", "epic_key": null, "epic_name": null,
+ "title_include": [], "title_exclude": [],
  "issue_type_map": {...}, "roots": {}}
 ```
-이미 있으면 `project_key`·`epic_key`·`epic_name`·`issue_type_map`만 갱신하고 나머지는 **보존**한다.
+이미 있으면 `project_key`·`epic_key`·`epic_name`·`title_include`·`title_exclude`·`issue_type_map`만 갱신하고 나머지는 **보존**한다.
 
-`schema_version`이 1이면 2로 올리면서 `epic_key`·`epic_name`을 `null`로 채운다. `watermark`와 `roots`는 그대로 둔다 — 마이그레이션이 기록을 지우면 안 된다.
+`schema_version`이 3보다 낮으면 3으로 올리면서 빠진 항목을 기본값(`null`, `[]`)으로 채운다. `watermark`와 `roots`는 그대로 둔다 — 마이그레이션이 기록을 지우면 안 된다.
 
 ## 7. 폴더와 .gitignore
 `daily/` `weekly/` `logs/` `.workflow/raw/` `.workflow/agg/`를 만들고, `WF_HOME`에 `.gitignore`를 둔다(`daily/`, `weekly/`, `.workflow/`, `state.json`, `jira_project_key_id.txt`).
@@ -65,4 +73,4 @@ description: jira-worklog 최초 1회 초기화 — 커넥터 확인, 프로젝�
 0건이면 JQL·권한·프로젝트 키를 점검하도록 안내한다.
 
 ---
-마지막에 요약 표(작업 폴더 / 프로젝트 키 / **에픽** / 프로젝트 유형 / 버그 표시 방식 / 이슈 건수 / 예약 등록 여부)를 보여준다.
+마지막에 요약 표(작업 폴더 / 프로젝트 키 / **에픽** / **제목 필터** / 프로젝트 유형 / 버그 표시 방식 / 이슈 건수 / 예약 등록 여부)를 보여준다.

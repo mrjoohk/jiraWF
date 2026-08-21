@@ -1,5 +1,5 @@
 {
- "schema_version": 2,
+ "schema_version": 3,
  "watermark": "2026-08-13T13:00:00+09:00",
  "project_key": "XXX",
  "issue_type_map": {
@@ -40,5 +40,7 @@
   }
  },
  "epic_key": null,
- "epic_name": null
+ "epic_name": null,
+ "title_include": [],
+ "title_exclude": []
 }

@@ -136,6 +136,76 @@ check "스코프 밖까지 수집하면 잡는다 (에픽 필터 누락)" 1 "$(c
 setup; run_pipeline; set_epic
 check "집계 후 스코프를 바꾸면 잡는다 (재집계 누락)" 1 "$(checks)"
 
+echo "== 제목 필터: 같은 에픽을 나눠 맡기 =="
+# 두 폴더가 같은 에픽을 맡되 제목으로 가른다. include 쪽과 exclude 쪽이
+# 합쳐서 빠짐없이 덮는지가 핵심이다 — 둘 다 include만 쓰면 어느 쪽에도
+# 안 걸리는 태스크가 조용히 사라진다.
+set_title() {  # set_title <json배열 include> <json배열 exclude>
+  INC="$1" EXC="$2" python3 - "$W/.workflow/state.json" <<'PY'
+import json,os,sys
+p=sys.argv[1]; d=json.load(open(p,encoding='utf-8'))
+d["epic_key"]="XXX-180"; d["epic_name"]="센서 캘리브레이션"
+d["title_include"]=json.loads(os.environ["INC"])
+d["title_exclude"]=json.loads(os.environ["EXC"])
+json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False)
+PY
+}
+agg_epic() {
+  python3 "$S/aggregate.py" --changes "$HERE/fixtures/raw_changes_epic.json" \
+    --open "$HERE/fixtures/raw_open_epic.json" --state "$W/.workflow/state.json" \
+    --out "$W/.workflow/agg/260814.json" --date 2026-08-14 >/dev/null 2>&1
+}
+keys_of() {  # 집계에 남은 root 키
+  python3 - "$W/.workflow/agg/260814.json" <<'PY'
+import json,sys
+a=json.load(open(sys.argv[1],encoding='utf-8'))
+print(",".join(sorted(r["key"] for e in a["epics"] for r in e["roots"])))
+PY
+}
+
+setup; set_title '["문서화"]' '[]'; agg_epic
+got=$(keys_of)
+if [ "$got" = "XXX-188" ]; then ok "include가 걸린 건만 맡는다"; else bad "include (실제 '$got')"; fi
+
+setup; set_title '[]' '["문서화"]'; agg_epic
+got2=$(keys_of)
+if [ "$got2" = "XXX-201" ]; then ok "exclude가 나머지를 맡는다"; else bad "exclude (실제 '$got2')"; fi
+
+if [ "$got,$got2" = "XXX-188,XXX-201" ]; then
+  ok "include 쪽과 exclude 쪽이 합쳐 에픽을 빠짐없이 덮는다"
+else
+  bad "상보성 깨짐 ('$got' + '$got2')"
+fi
+
+setup; set_title '["문서화"]' '[]'; agg_epic
+python3 - "$W/.workflow/agg/260814.json" <<'PY'
+import json,sys
+a=json.load(open(sys.argv[1],encoding='utf-8'))
+t=a["title_filtered"]
+assert t["count"]==1 and t["keys"]==["XXX-201"], t
+assert a["out_of_scope"]["count"]==0, a["out_of_scope"]   # 제목 제외는 스코프 위반이 아니다
+PY
+check "제목으로 빠진 건이 기록에 남는다 (스코프 위반은 아니다)" 0 "$?"
+
+setup; set_title '["문서화"]' '[]'; agg_epic
+python3 "$S/render_daily.py" --agg "$W/.workflow/agg/260814.json" \
+  --narrative "$HERE/fixtures/narrative.md" --out "$W/daily/260814.md" \
+  --state "$W/.workflow/state.json" >/dev/null
+check "제목 필터가 걸려 있어도 검사를 통과한다" 0 "$(checks)"
+
+setup; set_title '["문서화"]' '[]'; agg_epic
+python3 "$S/render_daily.py" --agg "$W/.workflow/agg/260814.json" \
+  --narrative "$HERE/fixtures/narrative.md" --out "$W/daily/260814.md" \
+  --state "$W/.workflow/state.json" >/dev/null
+set_title '["온도"]' '[]'
+check "제목 필터를 바꾸고 재집계 안 하면 잡는다" 1 "$(checks)"
+
+setup; set_title '["([미완성"]' '[]'
+python3 "$S/aggregate.py" --changes "$HERE/fixtures/raw_changes_epic.json" \
+  --open "$HERE/fixtures/raw_open_epic.json" --state "$W/.workflow/state.json" \
+  --out "$W/.workflow/agg/260814.json" --date 2026-08-14 >/dev/null 2>&1
+check "잘못된 정규식은 조용히 넘어가지 않고 중단한다" 2 "$?"
+
 echo "== 메모 보존 =="
 setup; run_pipeline
 python3 - "$W/daily/260814.md" <<'PY'

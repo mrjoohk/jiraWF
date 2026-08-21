@@ -111,8 +111,10 @@ def main():
         v.append("[INV-5] 집계 파일에 스코프 기록이 없다. 구버전 aggregate.py로 "
                  "만들어졌을 수 있다 — 다시 집계하십시오.")
     else:
-        want = (state.get("project_key"), state.get("epic_key"))
-        got = (scope.get("project_key"), scope.get("epic_key"))
+        want = (state.get("project_key"), state.get("epic_key"),
+                state.get("title_include") or [], state.get("title_exclude") or [])
+        got = (scope.get("project_key"), scope.get("epic_key"),
+               scope.get("title_include") or [], scope.get("title_exclude") or [])
         if want != got:
             v.append(f"[INV-5] 집계가 현재 설정과 다른 스코프로 만들어졌다: "
                      f"설정 {want} vs 집계 {got}. 설정을 바꾼 뒤 다시 집계하지 "

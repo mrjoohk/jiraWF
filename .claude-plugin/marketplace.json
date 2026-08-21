@@ -12,7 +12,7 @@
       "name": "jira-worklog",
       "source": "./plugins/jira-worklog",
       "description": "Jira에서 내 태스크 변동을 수집해 로컬 일일/주간 업무일지를 만들고, 진행 메모를 Jira 코멘트·하위 티켓으로 되돌리는 개인 업무 순환 워크플로우.",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "category": "productivity",
       "keywords": ["jira", "worklog", "daily", "standup"]
     }
