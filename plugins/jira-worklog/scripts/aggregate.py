@@ -23,6 +23,20 @@ STALL_DAYS = 7
 WIP_LIMIT = 3
 
 
+def _utf8_stdout():
+    """Windows 콘솔 기본 코드페이지(cp949 등)에서 위반 메시지가 깨지지 않도록.
+
+    메시지에 '→'나 '—'가 섞이면 인코딩 오류로 print 자체가 죽는다. 그러면
+    사람이 봐야 할 위반 내용이 화면에 아예 안 나오고, 종료 코드만 1로 남아
+    "검사에 걸렸다"와 "검사가 죽었다"를 구별할 수 없게 된다.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def load(path, default=None):
     if not path or not os.path.exists(path):
         return default
@@ -33,6 +47,22 @@ def load(path, default=None):
 def days_between(a, b):
     fmt = "%Y-%m-%d"
     return (dt.datetime.strptime(b, fmt) - dt.datetime.strptime(a, fmt)).days
+
+
+def in_scope(iss, project_key, epic_key):
+    """이 이슈가 이 폴더가 맡은 범위 안인가.
+
+    파생(Sub-task)의 부모는 에픽이 아니라 메인 태스크이므로 에픽 판정에서
+    제외한다. 파생은 어차피 root 아래에 붙으며 별도로 걸러진다.
+    """
+    if iss.get("is_subtask"):
+        return True
+    key = iss.get("key") or ""
+    if project_key and not key.startswith(project_key + "-"):
+        return False
+    if epic_key and iss.get("parent_key") != epic_key:
+        return False
+    return True
 
 
 def next_root_id(roots):
@@ -57,6 +87,7 @@ def summarize_changes(issue):
 
 
 def main():
+    _utf8_stdout()
     ap = argparse.ArgumentParser()
     ap.add_argument("--changes", required=True)
     ap.add_argument("--open", dest="open_", required=True)
@@ -69,8 +100,21 @@ def main():
     roots_state = state.setdefault("roots", {})
     today = a.date
 
+    project_key = state.get("project_key")
+    epic_key = state.get("epic_key")
+    epic_scope_name = state.get("epic_name")
+
     changed = [norm_issue(i) for i in issue_list(load(a.changes, {}) or {})]
     open_ = [norm_issue(i) for i in issue_list(load(a.open_, {}) or {})]
+
+    # 스코프 밖 이슈는 집계에서 제외하되 **조용히 버리지 않는다**. 한 건이라도
+    # 나왔다면 조회 JQL이 이 폴더의 범위와 어긋났다는 뜻이고, 그대로 두면 다른
+    # 폴더가 맡은 태스크를 중복 추적하게 된다. INV-5가 이 수를 보고 막는다.
+    oos = sorted({i["key"] for i in (changed + open_)
+                  if i["key"] and not in_scope(i, project_key, epic_key)})
+    changed = [i for i in changed if in_scope(i, project_key, epic_key)]
+    open_ = [i for i in open_ if in_scope(i, project_key, epic_key)]
+
     changed_keys = {i["key"] for i in changed if i["key"]}
 
     # 키 → state 로컬 ID 역인덱스
@@ -145,6 +189,9 @@ def main():
         "stall_days": STALL_DAYS,
         "today_local_ids": today_ids,
         "counts": counts,
+        "scope": {"project_key": project_key, "epic_key": epic_key,
+                  "epic_name": epic_scope_name},
+        "out_of_scope": {"count": len(oos), "keys": oos},
         "epics": sorted(epics.values(), key=lambda e: (e["epic_name"] or "")),
         "all_issue_keys": sorted({r["key"] for r in flat}
                                  | {c["jira_key"] for r in flat
@@ -158,9 +205,15 @@ def main():
     with open(a.state, "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
-    print(f"aggregate: root {len(flat)}건 "
+    scope_txt = project_key or "(프로젝트 미지정)"
+    if epic_key:
+        scope_txt += f" / 에픽 {epic_key}"
+    print(f"aggregate: [{scope_txt}] root {len(flat)}건 "
           f"(신규 {counts['new']} / 이어서 {counts['continuing']} / 정체 {counts['stalled']}), "
           f"미등록 파생 {counts['children_pending']}건 → {a.out}")
+    if oos:
+        print(f"  주의: 스코프 밖 {len(oos)}건을 제외했다 — {', '.join(oos[:5])}"
+              f"{' 외' if len(oos) > 5 else ''}. 조회 JQL을 확인하십시오.")
     return 0
 
 

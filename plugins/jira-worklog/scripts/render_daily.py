@@ -27,6 +27,20 @@ MEMO_PLACEHOLDER = (
 CLASS_LABEL = {"new": "신규", "continuing": "이어서", "stalled": "정체"}
 
 
+def _utf8_stdout():
+    """Windows 콘솔 기본 코드페이지(cp949 등)에서 위반 메시지가 깨지지 않도록.
+
+    메시지에 '→'나 '—'가 섞이면 인코딩 오류로 print 자체가 죽는다. 그러면
+    사람이 봐야 할 위반 내용이 화면에 아예 안 나오고, 종료 코드만 1로 남아
+    "검사에 걸렸다"와 "검사가 죽었다"를 구별할 수 없게 된다.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def extract_memo(path):
     if not os.path.exists(path):
         return None
@@ -59,13 +73,14 @@ def render_todo(agg):
 
 
 def main():
+    _utf8_stdout()
     ap = argparse.ArgumentParser()
     ap.add_argument("--agg", required=True)
     ap.add_argument("--narrative", required=True,
                     help="서브에이전트가 쓴 '지난 실행 이후 변동' 본문")
     ap.add_argument("--out", required=True)
     ap.add_argument("--state", required=True)
-    ap.add_argument("--version", default="0.1.0")
+    ap.add_argument("--version", default="0.2.0")
     a = ap.parse_args()
 
     agg = json.load(open(a.agg, encoding="utf-8"))

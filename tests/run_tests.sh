@@ -67,9 +67,9 @@ check "INV-4: 진행 메모 안의 키는 검사하지 않는다" 0 "$(checks)"
 setup; run_pipeline
 python3 - "$W/.workflow/last_render.json" <<'PY'
 import json,sys
-p=sys.argv[1]; d=json.load(open(p))
+p=sys.argv[1]; d=json.load(open(p,encoding='utf-8'))
 d["memo_existed_before"]=True; d["memo_hash_before"]="0000000000000000"
-json.dump(d,open(p,"w"))
+json.dump(d,open(p,"w",encoding="utf-8"))
 PY
 check "INV-1: 진행 메모 변경을 잡는다" 1 "$(checks)"
 
@@ -78,8 +78,8 @@ setup; run_pipeline
 checks >/dev/null
 python3 - "$W/.workflow/state.json" <<'PY'
 import json,sys
-p=sys.argv[1]; d=json.load(open(p)); d["watermark"]="2026-08-01T13:00:00+09:00"
-json.dump(d,open(p,"w"),ensure_ascii=False)
+p=sys.argv[1]; d=json.load(open(p,encoding='utf-8')); d["watermark"]="2026-08-01T13:00:00+09:00"
+json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False)
 PY
 check "INV-2: watermark 후퇴를 잡는다" 1 "$(checks)"
 check "INV-2: 이력이 없는 첫 실행은 통과한다 (후퇴 아님)" 0 "$(setup; run_pipeline; checks)"
@@ -87,11 +87,54 @@ check "INV-2: 이력이 없는 첫 실행은 통과한다 (후퇴 아님)" 0 "$(
 setup; run_pipeline
 python3 - "$W/.workflow/state.json" <<'PY'
 import json,sys
-p=sys.argv[1]; d=json.load(open(p))
+p=sys.argv[1]; d=json.load(open(p,encoding='utf-8'))
 d["roots"]["R-001"]["children"][1]["jira_key"]="XXX-160"
-json.dump(d,open(p,"w"),ensure_ascii=False)
+json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False)
 PY
 check "INV-3: 승인 없는 push를 잡는다" 1 "$(checks)"
+
+echo "== 응답 형태 =="
+# 커넥터가 {"issues": {"nodes": [...]}} 로 감싸 보내는 경우. 이 경로를 놓치면
+# 조회는 성공했는데 집계가 0건이 되고 일지에는 "변동 없음"으로 남는다.
+setup
+python3 "$S/aggregate.py" --changes "$HERE/fixtures/raw_changes_wrapped.json" \
+  --open "$HERE/fixtures/raw_open_wrapped.json" --state "$W/.workflow/state.json" \
+  --out "$W/.workflow/agg/260814.json" --date 2026-08-14 >/dev/null
+python3 - "$W/.workflow/agg/260814.json" <<'PY'
+import json,sys
+a=json.load(open(sys.argv[1],encoding='utf-8'))
+c=a["counts"]
+assert c["new"]==1 and c["continuing"]==1 and c["stalled"]==1, c
+assert a["field_paths_used"].get("issue_list")=="issues.nodes", a["field_paths_used"]
+PY
+check "감싼 응답도 평탄한 응답과 같게 집계된다" 0 "$?"
+
+echo "== INV-5: 에픽 스코프 =="
+# 폴더마다 프로젝트·에픽이 다르다. 조회에서 에픽 필터가 빠지면 옆 폴더가 맡은
+# 태스크까지 끌어오고, 그대로 마감하면 하위 티켓이 두 번 생긴다.
+set_epic() {
+  python3 - "$W/.workflow/state.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p,encoding='utf-8'))
+d["epic_key"]="XXX-180"; d["epic_name"]="센서 캘리브레이션"
+json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False)
+PY
+}
+
+setup; set_epic
+python3 "$S/aggregate.py" --changes "$HERE/fixtures/raw_changes_epic.json" \
+  --open "$HERE/fixtures/raw_open_epic.json" --state "$W/.workflow/state.json" \
+  --out "$W/.workflow/agg/260814.json" --date 2026-08-14 >/dev/null
+python3 "$S/render_daily.py" --agg "$W/.workflow/agg/260814.json" \
+  --narrative "$HERE/fixtures/narrative.md" --out "$W/daily/260814.md" \
+  --state "$W/.workflow/state.json" >/dev/null
+check "스코프에 맞게 좁혀 수집하면 통과한다" 0 "$(checks)"
+
+setup; set_epic; run_pipeline
+check "스코프 밖까지 수집하면 잡는다 (에픽 필터 누락)" 1 "$(checks)"
+
+setup; run_pipeline; set_epic
+check "집계 후 스코프를 바꾸면 잡는다 (재집계 누락)" 1 "$(checks)"
 
 echo "== 메모 보존 =="
 setup; run_pipeline

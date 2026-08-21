@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""런타임 불변식 검사 (INV-1~4).
+"""런타임 불변식 검사 (INV-1~5).
 
 INV-4가 이 파일의 존재 이유다: 서브에이전트가 일지를 쓰면서 이슈 키를
 지어내거나 잘못 옮기면 사람 눈에 띄지 않고, 몇 달 뒤 일지를 되짚을 때야
@@ -22,11 +22,26 @@ KEY_RE = re.compile(r"\b[A-Z][A-Z0-9]{1,9}-\d+\b")
 LOCAL_RE = re.compile(r"\bR-\d{3}(?:\.\d+)?\b")
 
 
+def _utf8_stdout():
+    """Windows 콘솔 기본 코드페이지(cp949 등)에서 위반 메시지가 깨지지 않도록.
+
+    메시지에 '→'나 '—'가 섞이면 인코딩 오류로 print 자체가 죽는다. 그러면
+    사람이 봐야 할 위반 내용이 화면에 아예 안 나오고, 종료 코드만 1로 남아
+    "검사에 걸렸다"와 "검사가 죽었다"를 구별할 수 없게 된다.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def load(p, d=None):
     return json.load(open(p, encoding="utf-8")) if p and os.path.exists(p) else d
 
 
 def main():
+    _utf8_stdout()
     ap = argparse.ArgumentParser()
     ap.add_argument("--daily", required=True)
     ap.add_argument("--agg", required=True)
@@ -86,12 +101,37 @@ def main():
         v.append(f"[INV-4] 일지가 원본에 없는 이슈 키를 언급한다: {', '.join(ghosts)}. "
                  "서브에이전트의 환각 또는 오타일 수 있다.")
 
+    # INV-5 — 수집 범위가 이 폴더의 설정과 일치하는가
+    # 폴더가 여럿일 때 각자 다른 프로젝트·에픽을 맡는다. JQL에서 에픽 필터를
+    # 빠뜨리면 옆 폴더가 맡은 태스크까지 끌어오고, 그 상태로 마감까지 가면
+    # 같은 태스크에 하위 티켓이 두 번 생긴다. 되돌리기 비용이 큰 쪽이므로
+    # 조용히 넘기지 않는다.
+    scope = agg.get("scope")
+    if scope is None:
+        v.append("[INV-5] 집계 파일에 스코프 기록이 없다. 구버전 aggregate.py로 "
+                 "만들어졌을 수 있다 — 다시 집계하십시오.")
+    else:
+        want = (state.get("project_key"), state.get("epic_key"))
+        got = (scope.get("project_key"), scope.get("epic_key"))
+        if want != got:
+            v.append(f"[INV-5] 집계가 현재 설정과 다른 스코프로 만들어졌다: "
+                     f"설정 {want} vs 집계 {got}. 설정을 바꾼 뒤 다시 집계하지 "
+                     "않았을 수 있다.")
+        oos = agg.get("out_of_scope") or {}
+        if oos.get("count"):
+            keys = ", ".join((oos.get("keys") or [])[:5])
+            v.append(f"[INV-5] 스코프 밖 이슈 {oos['count']}건이 수집되었다: {keys}. "
+                     "조회 JQL에 에픽 필터가 빠졌을 수 있다 — 이대로 마감하면 "
+                     "다른 폴더와 하위 티켓이 중복 생성된다.")
+
     ev = {
         "tool": "loop_checks",
         "timestamp": dt.datetime.now().isoformat(timespec="seconds"),
         "daily": a.daily,
         "checked": {"INV-1": "memo_preserved", "INV-2": "watermark_monotonic",
-                    "INV-3": "push_has_approval", "INV-4": "issue_keys_exist"},
+                    "INV-3": "push_has_approval", "INV-4": "issue_keys_exist",
+                    "INV-5": "collection_within_scope"},
+        "scope": agg.get("scope"),
         "keys_mentioned": sorted(mentioned),
         "keys_known": len(known),
         "violations": v,

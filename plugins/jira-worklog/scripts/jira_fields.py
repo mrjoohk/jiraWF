@@ -58,11 +58,27 @@ def norm_issue(d):
 
 
 def issue_list(raw):
-    """MCP 응답 최상위에서 이슈 배열을 찾아낸다."""
+    """MCP 응답 최상위에서 이슈 배열을 찾아낸다.
+
+    형태가 최소 두 갈래다. 평탄한 ``{"issues": [...]}`` 와, 커넥터가 한 겹
+    감싼 ``{"issues": {"nodes": [...]}}``. 후자를 놓치면 조회는 성공했는데
+    집계가 0건이 되고 일지에는 "변동 없음"으로 남는다 — 이 모듈이 막으려는
+    바로 그 실패 모드이므로, 감싼 형태도 함께 본다.
+
+    적중한 경로는 ``HITS["issue_list"]``에 남는다. 0건이 나왔을 때
+    조회 문제인지 경로 문제인지 가르는 근거다.
+    """
     if isinstance(raw, list):
+        HITS.setdefault("issue_list", "<root list>")
         return raw
-    for path in ("issues", "results", "data.issues", "structuredContent.issues"):
+    for path in ("issues", "results", "data.issues",
+                 "structuredContent.issues", "nodes"):
         v = dig(raw, path)
         if isinstance(v, list):
+            HITS.setdefault("issue_list", path)
             return v
+        if isinstance(v, dict) and isinstance(v.get("nodes"), list):
+            HITS.setdefault("issue_list", path + ".nodes")
+            return v["nodes"]
+    HITS.setdefault("issue_list", "<none>")
     return []
