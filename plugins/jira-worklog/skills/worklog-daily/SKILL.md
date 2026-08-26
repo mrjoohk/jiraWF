@@ -33,7 +33,7 @@ $WF_HOME/
 ### 1. 사전 확인
 - `.workflow/state.json`을 읽는다. 없으면 **중단**하고 `/wf-init` 실행을 안내한다.
 - `schema_version`이 이 플러그인이 기대하는 값(**3**)과 다르면 **실행하지 말고 중단**한다. 잘못된 스키마로 계속 도는 것보다 멈추는 편이 복구 가능하다.
-- **범위를 확정한다.** `state.json`의 `project_key`·`epic_key`·`title_include`·`title_exclude`가 판단 기준이다. `jira_project_key_id.txt`는 사람이 읽기 위한 사본이며(주석·빈 줄 무시, 첫 유효 줄), 값이 `state.json`과 다르면 `state.json`을 따르되 **그 불일치를 사용자에게 보고한다.**
+- **범위를 확정한다.** `state.json`의 `project_key`·`epic_key`·`title_include`·`title_exclude`가 판단 기준이다. (`title_prefix`는 마감이 새 티켓을 만들 때만 쓰이며 조회에는 관여하지 않는다.) `jira_project_key_id.txt`는 사람이 읽기 위한 사본이며(주석·빈 줄 무시, 첫 유효 줄), 값이 `state.json`과 다르면 `state.json`을 따르되 **그 불일치를 사용자에게 보고한다.**
 
 ### 2. Jira 조회 (MCP)
 두 번 조회한다. `{WM}`은 `state.json`의 `watermark`, `{KEY}`는 `project_key`.
@@ -61,6 +61,8 @@ python3 <plugin>/scripts/aggregate.py \
 ```
 출력의 `field_paths_used`를 **첫 실행에서는 반드시 확인**하고 사용자에게 보고한다. `<none>`이 많으면 MCP 응답 형태가 예상과 다르다는 뜻이다. 특히 `issue_list`가 `<none>`이면 이슈 배열을 아예 못 찾은 것이므로, 집계 0건을 "변동 없음"으로 읽으면 안 된다.
 
+`aggregate.py`가 **종료 코드 2**로 멈추면 `title_include`/`title_exclude`의 정규식이 깨진 것이다. 이것은 "검사에 걸렸다"가 아니라 "설정이 잘못됐다"이므로 대처가 다르다 — 다시 조회하지 말고 `state.json`의 정규식을 고친 뒤 같은 원본으로 재집계한다. 건너뛰면 이 폴더가 필터 없이 동작해 옆 폴더의 태스크까지 끌어안는다.
+
 `aggregate.py`가 "스코프 밖 N건을 제외했다"를 출력하면 조회 JQL이 이 폴더의 범위와 어긋난 것이다. 2단계로 돌아가 필터를 고치고 다시 조회한다.
 
 "제목 필터로 N건이 이 폴더에서 빠졌다"는 위반이 아니라 **정상 동작**이다. 다만 그 키 목록은 사용자에게 **그대로 전달한다** — 어느 폴더도 맡지 않은 태스크가 생겼는지는 사람만 판단할 수 있다.
@@ -73,8 +75,11 @@ python3 <plugin>/scripts/aggregate.py \
 ```
 python3 <plugin>/scripts/render_daily.py \
   --agg .workflow/agg/{YYMMDD}.json --narrative {임시파일} \
-  --out daily/{YYMMDD}.md --state .workflow/state.json
+  --out daily/{YYMMDD}.md --state .workflow/state.json \
+  --version {plugin.json의 version}
 ```
+
+`--version`은 `plugin.json`의 `version`을 그대로 넘긴다. 빼면 일지 하단 표기가 스크립트 기본값에 고정되어, 플러그인 버전을 올려도 일지는 따라가지 않는다 — DESIGN의 "버전 세 곳" 규약이 조용히 깨지는 지점이다.
 
 ### 6. 검사
 ```

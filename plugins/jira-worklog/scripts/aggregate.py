@@ -183,6 +183,7 @@ def main():
             local_id = next_root_id(roots_state)
             roots_state[local_id] = {"jira_key": iss["key"], "epic": iss["parent_key"],
                                      "epic_name": iss["parent_summary"],
+                                     "origin": "jira",
                                      "first_seen": today, "last_seen": today,
                                      "children": []}
             by_jira[iss["key"]] = local_id

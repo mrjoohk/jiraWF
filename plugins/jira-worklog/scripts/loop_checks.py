@@ -76,7 +76,12 @@ def main():
                       ensure_ascii=False, indent=2)
 
     # INV-3 — 승인 기록 없는 push 없음
+    # 파생뿐 아니라 마감이 새로 만든 **메인 태스크**도 대상이다. Jira에서
+    # 발견한 root(origin != "local")는 애초에 push한 적이 없으므로 제외한다.
     for lid, root in (state.get("roots") or {}).items():
+        if root.get("origin") == "local" and root.get("jira_key")                 and not root.get("approved_at"):
+            v.append(f"[INV-3] {lid} 가 {root['jira_key']} 로 새로 생성되었으나 "
+                     "승인 기록(approved_at)이 없다.")
         for c in root.get("children") or []:
             if c.get("jira_key") and not c.get("approved_at"):
                 v.append(f"[INV-3] {c.get('local_id', lid)} 가 {c['jira_key']} 로 "

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 회귀 시험 — 각 검사는 "되돌리면 실패하는" 음성 대조 형태다.
 # 검사가 무력화되면 이 시험이 깨진다. 통과만으로는 아무것도 증명하지 못하므로,
-# 정상 경로 1건 + 위반을 주입한 음성 대조 5건을 함께 돌린다.
+# 정상 경로와, 위반·계약 위반을 주입한 음성 대조를 함께 돌린다.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
@@ -205,6 +205,106 @@ python3 "$S/aggregate.py" --changes "$HERE/fixtures/raw_changes_epic.json" \
   --open "$HERE/fixtures/raw_open_epic.json" --state "$W/.workflow/state.json" \
   --out "$W/.workflow/agg/260814.json" --date 2026-08-14 >/dev/null 2>&1
 check "잘못된 정규식은 조용히 넘어가지 않고 중단한다" 2 "$?"
+
+echo "== 파생 레코드 계약 =="
+# 마감(worklog-close)이 state에 파생을 기록할 때 local_id 같은 필드를 빼면,
+# 다음 일일 배치의 render_daily가 그 필드를 직접 읽다가 죽는다. 문서로만
+# 막으면 같은 사고가 다시 난다 — 조용히 빠뜨리는 대신 크게 실패하는지를
+# 기계가 확인한다.
+setup
+python3 - "$W/.workflow/state.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p,encoding='utf-8'))
+d["roots"]["R-001"]["children"][1].pop("local_id")
+json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False)
+PY
+python3 "$S/aggregate.py" --changes "$HERE/fixtures/raw_changes.json" \
+  --open "$HERE/fixtures/raw_open.json" --state "$W/.workflow/state.json" \
+  --out "$W/.workflow/agg/260814.json" --date 2026-08-14 >/dev/null 2>&1
+python3 "$S/render_daily.py" --agg "$W/.workflow/agg/260814.json" \
+  --narrative "$HERE/fixtures/narrative.md" --out "$W/daily/260814.md" \
+  --state "$W/.workflow/state.json" >/dev/null 2>&1
+check "파생 레코드에 local_id가 없으면 조용히 넘어가지 않고 실패한다" 1 "$?"
+
+echo "== 신규 태스크: 제목 확정과 범위 검사 =="
+# Jira에 없던 일을 메인 태스크로 만들 때, 제목이 이 폴더의 범위에 안 들어오면
+# 티켓은 Jira에 남고 이 폴더 일지에서는 사라진다. 만들기 전에 막아야 한다.
+set_prefix() {  # set_prefix <include정규식> <접두사>
+  INC="$1" PRE="$2" python3 - "$W/.workflow/state.json" <<'PY'
+import json,os,sys
+p=sys.argv[1]; d=json.load(open(p,encoding='utf-8'))
+d["epic_key"]="XXX-180"; d["title_include"]=[os.environ["INC"]]
+d["title_exclude"]=[]; d["title_prefix"]=os.environ["PRE"] or None
+json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False)
+PY
+}
+title_of() { python3 "$S/new_title.py" --state "$W/.workflow/state.json" --summary "$1" 2>/dev/null; }
+
+setup; set_prefix '\[PFD\]' '[PFD]'
+got=$(title_of "케이블 재고 확인")
+if [ "$got" = "[PFD] 케이블 재고 확인" ]; then ok "접두사를 붙여 확정한다"; else bad "접두사 (실제 '$got')"; fi
+
+setup; set_prefix '\[PFD\]' '[PFD]'
+got=$(title_of "[PFD] 이미 붙어 있음")
+if [ "$got" = "[PFD] 이미 붙어 있음" ]; then ok "이미 붙어 있으면 두 번 붙이지 않는다"; else bad "중복 접두사 (실제 '$got')"; fi
+
+setup; set_prefix '\[PFD\]' ''
+python3 "$S/new_title.py" --state "$W/.workflow/state.json" --summary "접두사 없이" >/dev/null 2>&1
+check "필터는 있는데 접두사가 없으면 막는다" 2 "$?"
+
+setup; set_prefix '\[PFD\]' '[SCH]'
+python3 "$S/new_title.py" --state "$W/.workflow/state.json" --summary "엉뚱한 접두사" >/dev/null 2>&1
+check "접두사가 필터와 안 맞으면 막는다" 2 "$?"
+
+setup; set_prefix '\[PFD\]' '[PFD]'
+got=$(python3 "$S/new_title.py" --state "$W/.workflow/state.json" --summary "회귀 시험 추가" --kind subtask 2>/dev/null)
+if [ "$got" = "회귀 시험 추가" ]; then ok "파생은 접두사 대상이 아니다"; else bad "파생 면제 (실제 '$got')"; fi
+
+setup; set_prefix '\[PFD\]' '[PFD]'
+err=$(python3 "$S/new_title.py" --state "$W/.workflow/state.json" --summary "[긴급] 서버 점검" 2>&1 >/dev/null)
+out=$(title_of "[긴급] 서버 점검")
+if [ "$out" = "[PFD] [긴급] 서버 점검" ] && [ -n "$err" ]; then
+  ok "다른 대괄호 표시가 있으면 경고하되 막지는 않는다"
+else
+  bad "대괄호 경고 (제목 '$out', 경고 '$err')"
+fi
+
+setup
+got=$(title_of "필터 없는 폴더의 새 태스크")
+if [ "$got" = "필터 없는 폴더의 새 태스크" ]; then ok "필터가 없으면 제목을 그대로 쓴다"; else bad "무필터 (실제 '$got')"; fi
+
+echo "== INV-3: 마감이 만든 메인 태스크 =="
+setup; run_pipeline
+python3 - "$W/.workflow/state.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p,encoding='utf-8'))
+d["roots"]["R-009"]={"jira_key":"XXX-900","epic":"XXX-180","origin":"local",
+                     "first_seen":"2026-08-14","last_seen":"2026-08-14","children":[]}
+json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False)
+PY
+check "승인 기록 없이 만들어진 메인 태스크를 잡는다" 1 "$(checks)"
+
+setup; run_pipeline
+python3 - "$W/.workflow/state.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p,encoding='utf-8'))
+d["roots"]["R-009"]={"jira_key":"XXX-900","epic":"XXX-180","origin":"local",
+                     "approved_at":"2026-08-14T18:00:00+09:00",
+                     "first_seen":"2026-08-14","last_seen":"2026-08-14","children":[]}
+json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False)
+PY
+check "승인 기록이 있으면 통과한다" 0 "$(checks)"
+
+setup; run_pipeline
+python3 - "$W/.workflow/state.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p,encoding='utf-8'))
+d["roots"]["R-009"]={"jira_key":"XXX-900","epic":"XXX-180","origin":"local",
+                     "approved_at":"2026-08-14T18:00:00+09:00","jira_key":None,
+                     "first_seen":"2026-08-14","last_seen":"2026-08-14","children":[]}
+json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False)
+PY
+check "승인만 되고 아직 안 만들어진 것은 위반이 아니다" 0 "$(checks)"
 
 echo "== 메모 보존 =="
 setup; run_pipeline
