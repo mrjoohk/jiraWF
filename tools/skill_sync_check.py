@@ -49,6 +49,7 @@ def main():
     chk = rd(f"{R}/scripts/loop_checks.py")
     plug = json.loads(rd(f"{R}/.claude-plugin/plugin.json"))
     mkt = json.loads(rd(MARKETPLACE))
+    readme = rd(os.path.join(_REPO, "README.md"))
     fields = rd(f"{R}/scripts/jira_fields.py")
     newt = rd(f"{R}/scripts/new_title.py")
     mrgt = rd(f"{R}/scripts/merge_targets.py")
@@ -129,6 +130,33 @@ def main():
     c("weekly: loop_checks 비대상 명시", "검사 대상이 **아니다" in weekly)
     c("weekly: Done 판정 근거 명시", "→ Done" in weekly)
     c("close: 절차 0 사전 확인 존재", "### 0. 사전 확인" in close)
+
+    # ── 사용자 매뉴얼 ↔ 스킬 (README가 안내하는 문구가 실제로 걸리는가) ──
+    # README는 "이렇게 말하면 됩니다"라고 문구를 나열한다. 스킬의
+    # description 이 바뀌면 사용자는 걸리지 않는 말을 배우게 되고, 그
+    # 실패는 "왜 안 되지"로만 나타나 원인을 찾기 어렵다.
+    def desc(md):
+        for line in md.splitlines()[:12]:
+            if line.startswith("description:"):
+                return line
+        return ""
+
+    for phrase, src, who in [
+        ("일일 배치", daily, "daily"), ("오늘 할 일 가져와", daily, "daily"),
+        ("업무일지 갱신", daily, "daily"),
+        ("오늘 한 일 정리해줘", close, "close"), ("마감", close, "close"),
+        ("오늘 정리", close, "close"), ("Jira에 올려줘", close, "close"),
+        ("주간일지", weekly, "weekly"), ("이번 주 정리", weekly, "weekly"),
+        ("주간 롤업", weekly, "weekly"),
+    ]:
+        c(f"트리거 문구 '{phrase}' — README 안내 ↔ {who} description",
+          phrase in readme and phrase in desc(src),
+          "README가 알려준 말이 실제로 그 스킬을 부르는가")
+
+    c("README가 설명한 메모 받아쓰기 경로가 close 스킬에 있다",
+      "받아쓰" in readme and "받아쓰기이지" in close)
+    c("README가 설명한 세 갈래(새 태스크/병합/보류)가 close 스킬에 있다",
+      all(k in readme and k in close for k in ("새 태스크", "병합", "보류")))
 
     # ── 신규 태스크 생성 / 병합 선택 (0.4.0~0.5.0) ────────────────────
     for f in ("new_title.py", "merge_targets.py"):
