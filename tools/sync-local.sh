@@ -9,11 +9,13 @@
 #
 #   tools/sync-local.sh                 # 패치 버전 +1 후 반영
 #   tools/sync-local.sh --version 0.6.0 # 버전을 지정해 반영
-#   tools/sync-local.sh --skip-tests    # 시험 생략 (급할 때만)
+#   tools/sync-local.sh --skip-tests    # 검증 생략 (급할 때만)
 #
-# 시험을 기본으로 돌리는 이유: 소스가 로컬이면 커밋하지 않은 중간 상태도
+# 검증을 기본으로 돌리는 이유: 소스가 로컬이면 커밋하지 않은 중간 상태도
 # 그대로 전역에 반영된다. GitHub 를 거칠 때는 push 라는 관문이 있었지만
-# 이제 없으므로, 그 자리를 회귀 시험이 대신한다.
+# 이제 없으므로, 그 자리를 검증이 대신한다.
+#
+# 돌리는 것: 회귀 시험 · 문서↔코드 대조 · (상위 프로젝트가 있으면) 대장 무결성.
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -55,7 +57,7 @@ fi
 
 # ── 1. 회귀 시험 ──────────────────────────────────────────────────────
 if [ "$SKIP_TESTS" -eq 0 ]; then
-  echo "== 회귀 시험 · 문서 대조 =="
+  echo "== 검증 (회귀 시험 · 문서 대조 · 대장) =="
   if ! bash "$ROOT/tests/run_tests.sh" >/tmp/sync_tests.$$ 2>&1; then
     tail -30 /tmp/sync_tests.$$
     rm -f /tmp/sync_tests.$$
@@ -71,8 +73,27 @@ if [ "$SKIP_TESTS" -eq 0 ]; then
     echo "문서와 코드가 어긋난다. 반영하지 않는다." >&2
     exit 1
   fi
+
+  # 상위 프로젝트가 대장(ledger)을 들고 있으면 그 무결성도 함께 본다.
+  # 이 저장소는 단독으로 설치·사용되므로 **상위에 의존하면 안 된다** —
+  # 둘 다 있을 때만 돌리고, 없으면 조용히 건너뛴다.
+  OUTER="$(cd "$ROOT/.." 2>/dev/null && pwd)"
+  GC="$OUTER/tools/graph_checks.py"
+  GCFG="$OUTER/graph/checks_config.json"
+  if [ -n "${OUTER:-}" ] && [ -f "$GC" ] && [ -f "$GCFG" ]; then
+    if ! python3 "$GC" >/tmp/sync_graph.$$ 2>&1; then
+      cat /tmp/sync_graph.$$
+      rm -f /tmp/sync_graph.$$
+      echo >&2
+      echo "대장 무결성 검사가 실패했다. 반영하지 않는다 — 문서가 인용한" >&2
+      echo "코드가 사라졌거나 대장이 어긋났다." >&2
+      exit 1
+    fi
+    grep '^graph_checks:' /tmp/sync_graph.$$ || true
+    rm -f /tmp/sync_graph.$$
+  fi
 else
-  echo "== 회귀 시험 생략 (--skip-tests) =="
+  echo "== 검증 생략 (--skip-tests) =="
 fi
 
 # ── 2. 버전 올리기 (세 곳) ────────────────────────────────────────────
