@@ -10,6 +10,31 @@
 """
 HITS = {}
 
+# state.json 이 이 값과 다르면 스크립트는 **실행하지 않고 중단한다.**
+# DESIGN 은 처음부터 그렇게 못박았지만 오래도록 문서에만 있었고, 실제로는
+# 에이전트가 문서를 지키는 데 전적으로 의존했다(대장 F-014). 구스키마에
+# 대고 마감까지 가면 roots 구조가 어긋난 채 티켓이 생성되는데, 그것은
+# 되돌리기 가장 비싼 실패다. 그래서 여기서 기계가 막는다.
+SCHEMA_VERSION = 3
+
+
+def require_schema(state, where=""):
+    """state.json 의 schema_version 을 확인하고, 다르면 종료 코드 2로 중단한다.
+
+    2를 쓰는 이유: 1은 "검사 위반"(다시 돌리면 될 수도 있다)이고 2는
+    "설정이 깨졌다"(사람이 고치기 전에는 뭘 해도 소용없다)이다. 대처가
+    다르므로 코드로 구별한다.
+    """
+    import sys as _sys
+    got = state.get("schema_version")
+    if got == SCHEMA_VERSION:
+        return
+    src = f" ({where})" if where else ""
+    print(f"schema_version 불일치{src}: 기대 {SCHEMA_VERSION}, 실제 {got!r}. "
+          "구스키마로 계속 도는 것보다 멈추는 편이 복구 가능하다 — "
+          "/wf-init 을 다시 실행해 마이그레이션하십시오.", file=_sys.stderr)
+    raise SystemExit(2)
+
 
 def dig(obj, *paths, default=None, tag=None):
     """dotted path 여러 개를 순서대로 시도해 첫 non-None 값을 반환."""

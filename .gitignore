@@ -3,6 +3,7 @@
 # 인터넷에 공개됩니다. .github/workflows/guard.yml이 2차 방어입니다.
 daily/
 weekly/
+logs/
 .workflow/
 state.json
 jira_project_key_id.txt

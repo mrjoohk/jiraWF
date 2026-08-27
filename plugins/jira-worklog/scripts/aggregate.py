@@ -17,7 +17,8 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from jira_fields import HITS, issue_list, norm_issue  # noqa: E402
+from jira_fields import (HITS, issue_list, norm_issue,  # noqa: E402
+                         require_schema)
 
 STALL_DAYS = 7
 WIP_LIMIT = 3
@@ -135,6 +136,7 @@ def main():
     a = ap.parse_args()
 
     state = load(a.state, {}) or {}
+    require_schema(state, a.state)
     roots_state = state.setdefault("roots", {})
     today = a.date
 

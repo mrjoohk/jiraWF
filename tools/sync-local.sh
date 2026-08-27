@@ -33,12 +33,12 @@ while [ $# -gt 0 ]; do
 done
 
 # ── python3 확보 ──────────────────────────────────────────────────────
-# Windows 에서 python3 는 Microsoft Store 스텁인 경우가 많다. 아무것도
-# 출력하지 않고 exit 49 를 내므로, 그대로 두면 시험이 전부 실패하는데
-# 원인은 코드가 아니다. 여기서 셔임을 만들어 그 혼란을 막는다.
 # 한글 메시지가 Windows 기본 코드페이지(cp949)에서 깨지지 않게 한다.
 export PYTHONIOENCODING=utf-8
 
+# Windows 에서 python3 는 Microsoft Store 스텁인 경우가 많다. 아무것도
+# 출력하지 않고 exit 49 를 내므로, 그대로 두면 시험이 전부 실패하는데
+# 원인은 코드가 아니다. 여기서 셔임을 만들어 그 혼란을 막는다.
 if ! python3 --version >/dev/null 2>&1; then
   if python --version >/dev/null 2>&1; then
     SHIM="$(mktemp -d)"
@@ -55,7 +55,7 @@ fi
 
 # ── 1. 회귀 시험 ──────────────────────────────────────────────────────
 if [ "$SKIP_TESTS" -eq 0 ]; then
-  echo "== 회귀 시험 =="
+  echo "== 회귀 시험 · 문서 대조 =="
   if ! bash "$ROOT/tests/run_tests.sh" >/tmp/sync_tests.$$ 2>&1; then
     tail -30 /tmp/sync_tests.$$
     rm -f /tmp/sync_tests.$$
@@ -66,6 +66,11 @@ if [ "$SKIP_TESTS" -eq 0 ]; then
   fi
   tail -1 /tmp/sync_tests.$$
   rm -f /tmp/sync_tests.$$
+  if ! (cd "$ROOT" && python3 tools/skill_sync_check.py); then
+    echo >&2
+    echo "문서와 코드가 어긋난다. 반영하지 않는다." >&2
+    exit 1
+  fi
 else
   echo "== 회귀 시험 생략 (--skip-tests) =="
 fi

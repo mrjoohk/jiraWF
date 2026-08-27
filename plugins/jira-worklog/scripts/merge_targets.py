@@ -24,7 +24,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from aggregate import compile_patterns, in_scope, title_match  # noqa: E402
-from jira_fields import issue_list, norm_issue  # noqa: E402
+from jira_fields import issue_list, norm_issue, require_schema  # noqa: E402
 
 
 def _utf8_stdout():
@@ -45,6 +45,7 @@ def main():
 
     with open(a.state, encoding="utf-8") as f:
         state = json.load(f)
+    require_schema(state, a.state)
     with open(a.issues, encoding="utf-8") as f:
         raw = json.load(f)
 

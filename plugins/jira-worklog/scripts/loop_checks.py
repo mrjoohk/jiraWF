@@ -18,6 +18,9 @@ import os
 import re
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from jira_fields import require_schema  # noqa: E402
+
 KEY_RE = re.compile(r"\b[A-Z][A-Z0-9]{1,9}-\d+\b")
 LOCAL_RE = re.compile(r"\bR-\d{3}(?:\.\d+)?\b")
 
@@ -52,6 +55,7 @@ def main():
     v = []
     agg = load(a.agg, {}) or {}
     state = load(a.state, {}) or {}
+    require_schema(state, a.state)
     workdir = os.path.dirname(a.state) or "."
 
     # INV-1 — 사람이 쓴 진행 메모가 보존되었는가

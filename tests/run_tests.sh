@@ -355,6 +355,40 @@ assert [x["index"] for x in t]==[1,2,3,4]
 PY
 check "범위 안·미완료를 먼저, 범위 밖을 마지막에 놓는다" 0 "$?"
 
+echo "== schema_version 기계 게이트 =="
+# DESIGN 은 "맞지 않으면 실행하지 않고 중단"이라고 못박았지만, 오래도록
+# 문서에만 있고 어느 스크립트도 검사하지 않았다(대장 F-014). 구스키마에
+# 대고 마감까지 가면 roots 구조가 어긋난 채 티켓이 생성된다.
+set_schema() {
+  SV="$1" python3 - "$W/.workflow/state.json" <<'PY'
+import json,os,sys
+p=sys.argv[1]; d=json.load(open(p,encoding='utf-8'))
+d["schema_version"]=int(os.environ["SV"])
+json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False)
+PY
+}
+
+setup; set_schema 2
+python3 "$S/aggregate.py" --changes "$HERE/fixtures/raw_changes.json" \
+  --open "$HERE/fixtures/raw_open.json" --state "$W/.workflow/state.json" \
+  --out "$W/.workflow/agg/260814.json" --date 2026-08-14 >/dev/null 2>&1
+check "구스키마면 집계가 중단한다 (exit 2)" 2 "$?"
+
+setup; set_schema 2
+python3 "$S/new_title.py" --state "$W/.workflow/state.json" --summary "x" >/dev/null 2>&1
+check "구스키마면 새 티켓 제목 확정이 중단한다" 2 "$?"
+
+setup; run_pipeline; set_schema 2
+python3 "$S/loop_checks.py" --daily "$W/daily/260814.md" \
+  --agg "$W/.workflow/agg/260814.json" --state "$W/.workflow/state.json" >/dev/null 2>&1
+check "구스키마면 검사가 중단한다 (위반 1이 아니라 설정오류 2)" 2 "$?"
+
+setup
+python3 "$S/aggregate.py" --changes "$HERE/fixtures/raw_changes.json" \
+  --open "$HERE/fixtures/raw_open.json" --state "$W/.workflow/state.json" \
+  --out "$W/.workflow/agg/260814.json" --date 2026-08-14 >/dev/null 2>&1
+check "현행 스키마는 그대로 통과한다" 0 "$?"
+
 echo "== 메모 보존 =="
 setup; run_pipeline
 python3 - "$W/daily/260814.md" <<'PY'

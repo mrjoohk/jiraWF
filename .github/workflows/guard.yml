@@ -56,3 +56,8 @@ jobs:
           python -c "import json;json.load(open('plugins/jira-worklog/.claude-plugin/plugin.json'))"
       - name: 회귀 시험 (INV 음성 대조)
         run: bash tests/run_tests.sh
+      - name: 문서 ↔ 코드 대조
+        # 스킬 문서는 스크립트의 인자·필드·섹션 제목을 문자열로 인용한다.
+        # 그 인용이 어긋나면 실행 시점에야 드러나고 그때는 배치가 죽거나
+        # 조용히 틀린다. 사람이 기억해서 돌리는 검사는 언젠가 안 돌아간다.
+        run: python tools/skill_sync_check.py
