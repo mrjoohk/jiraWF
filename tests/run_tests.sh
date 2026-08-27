@@ -306,6 +306,55 @@ json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False)
 PY
 check "승인만 되고 아직 안 만들어진 것은 위반이 아니다" 0 "$(checks)"
 
+echo "== 병합 후보 목록 =="
+# 초안이 "신규"라고 한 항목을 기존 태스크에 붙일 때 고를 목록.
+# 집계 파일에는 이 폴더 범위의 내 미완료 root만 있으므로 따로 조회해 추린다.
+set_targets() {
+  python3 - "$W/.workflow/state.json" <<'PY'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p,encoding='utf-8'))
+d["epic_key"]="XXX-180"; d["title_include"]=["문서화"]; d["title_exclude"]=[]
+json.dump(d,open(p,"w",encoding="utf-8"),ensure_ascii=False)
+PY
+}
+targets_json() {
+  python3 "$S/merge_targets.py" --state "$W/.workflow/state.json" \
+    --issues "$HERE/fixtures/raw_epic_targets.json" --json
+}
+
+setup; set_targets
+targets_json > "$W/targets.json"
+python3 - "$W/targets.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+keys=[t["key"] for t in d["targets"]]
+assert "XXX-155" not in keys, "파생이 후보에 들어갔다"
+assert d["count"]==4, d["count"]
+PY
+check "파생(Sub-task)은 병합 후보가 아니다" 0 "$?"
+
+setup; set_targets; targets_json > "$W/targets.json"
+python3 - "$W/targets.json" <<'PY'
+import json,sys
+t=json.load(open(sys.argv[1],encoding='utf-8'))["targets"]
+by={x["key"]:x for x in t}
+assert by["XXX-188"]["in_scope"] is True, by["XXX-188"]
+assert by["XXX-201"]["in_scope"] is False, by["XXX-201"]   # 제목 필터 밖
+assert by["XXX-300"]["done"] is True, by["XXX-300"]
+PY
+check "범위 안팎과 완료 여부를 표시한다" 0 "$?"
+
+setup; set_targets; targets_json > "$W/targets.json"
+python3 - "$W/targets.json" <<'PY'
+import json,sys
+t=json.load(open(sys.argv[1],encoding='utf-8'))["targets"]
+order=[x["key"] for x in t]
+# 범위 안·미완료를 갱신 역순으로 먼저, 그다음 범위 안·완료, 마지막이 범위 밖
+assert order==["XXX-310","XXX-188","XXX-300","XXX-201"], order
+assert [x["index"] for x in t]==[1,2,3,4]
+PY
+check "범위 안·미완료를 먼저, 범위 밖을 마지막에 놓는다" 0 "$?"
+
 echo "== 메모 보존 =="
 setup; run_pipeline
 python3 - "$W/daily/260814.md" <<'PY'

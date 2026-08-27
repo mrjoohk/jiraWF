@@ -84,15 +84,45 @@ python3 <plugin>/scripts/new_title.py   --state .workflow/state.json --summary "
 
 > 제목 필터로 폴더를 나눠 쓰는 경우, 접두사 없는 제목으로 만들면 티켓은 Jira에 남는데 이 폴더의 다음 조회에는 **안 잡힌다.** 일지에서 사라지고 `roots`에는 다시 갱신되지 않는 항목이 남는다. 만든 사람이 가장 늦게 알아채는 유실이므로, 만들기 전에 멈춘다. (`title_include`가 있는데 `title_prefix`가 비어 있으면 이 검사는 항상 2를 낸다 — 그것이 옳다. 먼저 `/wf-init`으로 접두사를 정하십시오.)
 
+### 2-2. 병합 후보 조회 (`new_roots`나 `unclear`가 있을 때만)
+초안이 "신규"로 분류했다고 해서 정말 신규인 것은 아니다. **에픽 안의 기존 태스크에 붙일 일일 수도 있다.** 그런데 오늘 집계 파일에는 이 폴더 범위의 **내 미완료 root**만 들어 있어서, 완료된 태스크나 다른 폴더가 맡은 태스크는 초안 작성자의 시야에 아예 없다. 그래서 여기서 따로 조회한다.
+
+```
+project = {KEY} AND parent = "{epic_key}" AND assignee = currentUser() ORDER BY updated DESC
+```
+`epic_key`가 `null`이면 프로젝트 전체가 되어 목록이 감당 못 하게 커진다. 그때는 `AND updated >= -90d`를 붙이고 **잘랐다는 사실을 알린다.**
+
+응답 원본을 `.workflow/raw/{stamp}_epic.json`으로 저장한 뒤:
+```
+python3 <plugin>/scripts/merge_targets.py   --state .workflow/state.json --issues .workflow/raw/{stamp}_epic.json
+```
+범위 안팎·완료 여부를 표시한 번호 매긴 목록이 나온다. **이 목록을 눈대중으로 다시 만들지 않는다** — 3단계에서는 번호만 고른다.
+
 ### 3. 승인
 초안을 표로 보여준다 — 무엇이 어느 이슈에 붙는지, 새로 생기는 것이 무엇인지. 신규 메인 태스크는 **2-1에서 확정한 제목과 부모 에픽**을 함께 보인다. 사용자가 항목별로 승인/수정/보류할 수 있게 한다. **보류된 항목은 메모에 그대로 남긴다**(다음 마감에 다시 올라온다).
+
+`new_roots`와 `unclear`의 각 항목은 **세 갈래로 고르게 한다.**
+
+| 선택 | 결과 |
+|---|---|
+| **새 태스크** | 2-1에서 확정한 제목으로 에픽 아래에 만든다 |
+| **병합 → 기존 태스크** | 2-2 목록의 번호를 고른다. 그 항목은 신규가 아니라 **그 태스크의 코멘트**가 된다 |
+| **보류** | 메모에 그대로 남긴다. 다음 마감에 다시 올라온다 |
+
+병합을 고를 때 두 가지는 **고르기 전에 다시 알린다.**
+- 대상이 목록에서 `밖`이면 이 폴더가 맡지 않는 태스크다. 코멘트는 남지만 이 폴더의 일지에는 나타나지 않는다.
+- 대상이 완료 상태면 다음 일일 배치의 미완료 조회에 안 잡힌다.
+
+**병합 대상이 `state.json`의 `roots`에 없으면 그 아래에 파생을 만들지 않는다.** 파생 번호(`R-nnn.m`)를 매길 자리가 없고, `render_daily.py`가 "오늘 할 일"에 찍을 근거도 없다. 그런 자식은 **보류로 돌리고** 그 사실을 알린다. 코멘트만 남기는 것은 문제없다.
 
 `unclear`는 **별도 구획으로 원문 그대로** 보여주고 사람이 분류하게 한다. 사람이 분류하지 않으면 그 줄은 메모에 그대로 남긴다 — 조용히 버리지 않는다. 서브에이전트가 판단을 못 한 줄이 아무 데도 안 남으면, 그날 적어둔 것이 사라졌다는 사실조차 남지 않는다.
 
 ### 4. 반영 (MCP)
 승인된 것만, **이 순서대로**. 신규 메인 태스크가 먼저다 — 그 키가 있어야 자식을 붙일 수 있다.
 
-0. **신규 메인 태스크.** 승인 즉시 `state.json`의 `roots`에 다음 `R-nnn`으로 append한다:
+0-a. **병합으로 바뀐 항목.** 신규가 아니므로 만들지 않는다. 2단계 초안의 `comments`에 대상 `jira_key`로 옮겨 붙이고, 그 항목의 `ref`를 가리키던 자식은 대상 root의 자식으로 다시 건다(대상이 `roots`에 없으면 3단계에서 이미 보류됐다).
+
+0-b. **신규 메인 태스크.** 승인 즉시 `state.json`의 `roots`에 다음 `R-nnn`으로 append한다:
    ```json
    {"jira_key":null,"epic":"<epic_key>","origin":"local",
     "summary":"<확정 제목>","approved_at":"<ISO8601>",
@@ -115,5 +145,5 @@ python3 <plugin>/scripts/new_title.py   --state .workflow/state.json --summary "
 
 ### 5. 마무리
 - 처리된 메모 줄에 `✓ {jira_key}`를 덧붙인다(삭제하지 않는다 — 그날의 원본 기록이다).
-- `logs/{stamp}/evidence.json`에 최소 다음을 남긴다: `{"tool":"worklog-close","timestamp":...,"daily":...,"scope":{...},"comments_ok":n,"new_roots_ok":n,"children_ok":n,"failed":[...],"keys_created":[...],"unclear_left":n}`. 나중에 문서가 인용할 수 있는 것은 이 파일뿐이다 — 콘솔 출력만 남기면 인용할 것이 없다.
+- `logs/{stamp}/evidence.json`에 최소 다음을 남긴다: `{"tool":"worklog-close","timestamp":...,"daily":...,"scope":{...},"comments_ok":n,"new_roots_ok":n,"merged_ok":n,"children_ok":n,"failed":[...],"keys_created":[...],"unclear_left":n}`. 나중에 문서가 인용할 수 있는 것은 이 파일뿐이다 — 콘솔 출력만 남기면 인용할 것이 없다.
 - 실패한 항목은 **초안에 그대로 두고** 다음 실행에서 재시도 가능하게 한다.
