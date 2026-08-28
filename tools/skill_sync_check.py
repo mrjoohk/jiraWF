@@ -50,11 +50,13 @@ def main():
     plug = json.loads(rd(f"{R}/.claude-plugin/plugin.json"))
     mkt = json.loads(rd(MARKETPLACE))
     readme = rd(os.path.join(_REPO, "README.md"))
+    agents = rd(os.path.join(_REPO, "AGENTS.md"))
     fields = rd(f"{R}/scripts/jira_fields.py")
     newt = rd(f"{R}/scripts/new_title.py")
     mrgt = rd(f"{R}/scripts/merge_targets.py")
 
     SCHEMA_EXPECTED = 3
+    LINT_MAX = 600
     C = []
 
     def c(n, ok, d=""):
@@ -155,6 +157,26 @@ def main():
 
     c("README가 설명한 메모 받아쓰기 경로가 close 스킬에 있다",
       "받아쓰" in readme and "받아쓰기이지" in close)
+    # ── 스프린트 배치 / 본문 문체 ────────────────────────────────
+    lint = rd(f"{R}/scripts/draft_lint.py")
+    c("스크립트 존재: draft_lint.py", os.path.exists(f"{R}/scripts/draft_lint.py"))
+    for arg in ["--draft"]:
+        c(f"draft_lint.py 인자 {arg}", f'"{arg}"' in lint and arg in close)
+    c("draft_lint: 1은 경고이지 중단이 아니라고 close·AGENTS 가 같이 말한다",
+      "중단이 아니라 경고" in close and "중단 아님" in agents,
+      "다른 스크립트의 1(멈춰라)과 뜻이 다르므로 양쪽에 적혀 있어야 한다")
+    c("문체 규칙 — 드래프터가 머리말·표를 금지한다",
+      "머리말(`##`)과 표를 쓰지 않는다" in drafter)
+    c("문체 길이 상한 — 문서와 코드가 같은 값",
+      f"MAX_CHARS = {LINT_MAX}" in lint and f"{LINT_MAX}자" in drafter
+      and f"{LINT_MAX}자" in readme)
+    c("sprint_field — wf-init이 스키마로 찾고 close가 쓴다",
+      "gh-sprint" in init and "sprint_field" in close)
+    c("sprint_mode — 세 값이 wf-init·close 양쪽에 있다",
+      all(v in init and v in close for v in ("`active`", "`backlog`", "`ask`")))
+    c("활성 스프린트 판별 — 지나간 것을 걸러낸다고 명시",
+      'state == "active"' in close)
+
     c("README가 설명한 세 갈래(새 태스크/병합/보류)가 close 스킬에 있다",
       all(k in readme and k in close for k in ("새 태스크", "병합", "보류")))
 

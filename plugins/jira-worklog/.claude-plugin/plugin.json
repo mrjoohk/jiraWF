@@ -1,6 +1,6 @@
 {
   "name": "jira-worklog",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Jira 기반 개인 업무 기록·추적 순환. 일일 배치(13:00) → 로컬 작업 → 마감 → 주간 롤업.",
   "author": {
     "name": "mrjoohk"

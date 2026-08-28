@@ -389,6 +389,28 @@ python3 "$S/aggregate.py" --changes "$HERE/fixtures/raw_changes.json" \
   --out "$W/.workflow/agg/260814.json" --date 2026-08-14 >/dev/null 2>&1
 check "현행 스키마는 그대로 통과한다" 0 "$?"
 
+echo "== 초안 문체 검사 =="
+# Jira 태스크는 팀에 사실을 공유하는 자리이지 설계 문서를 두는 곳이 아니다.
+# 문체는 기계가 판정할 수 없지만 "문서로 자란 표시"(머리말·표·길이)는 셀 수 있다.
+setup
+python3 "$S/draft_lint.py" --draft "$HERE/fixtures/draft_causal.json" >/dev/null 2>&1
+check "인과형 본문은 지적 없이 통과한다" 0 "$?"
+
+python3 "$S/draft_lint.py" --draft "$HERE/fixtures/draft_doc.json" >/dev/null 2>&1
+check "문서형 본문을 잡는다 (경고)" 1 "$?"
+
+python3 "$S/draft_lint.py" --draft "$HERE/fixtures/draft_doc.json" --json > "$W/lint.json" 2>/dev/null
+python3 - "$W/lint.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+kinds={f["kind"] for f in d["findings"]}
+assert kinds == {"heading","table","length"}, kinds
+PY
+check "머리말·표·길이 세 가지를 각각 구별해 지적한다" 0 "$?"
+
+python3 "$S/draft_lint.py" --draft "$W/없는파일.json" >/dev/null 2>&1
+check "초안을 못 읽으면 설정 오류(2)로 구별한다" 2 "$?"
+
 echo "== 메모 보존 =="
 setup; run_pipeline
 python3 - "$W/daily/260814.md" <<'PY'

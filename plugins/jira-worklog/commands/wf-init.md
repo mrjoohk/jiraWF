@@ -48,12 +48,28 @@ python3 <plugin>/scripts/new_title.py --state <새 state.json> --summary "확인
 
 - `project_style`: team-managed / company-managed
 - `subtask_type`: 실제 생성 가능한 sub-task 계층 타입 이름
+- `sprint_field`: 스프린트 필드의 `customfield_*` ID. 필드 목록에서 `schema.custom`이 `com.pyxis.greenhopper.jira:gh-sprint`인 것을 찾는다. 사이트마다 번호가 다르므로 **이름이 아니라 이 스키마로 찾는다.** 없으면(스크럼 보드가 없는 프로젝트) `null`.
 - `bug_marker`:
   - sub-task 계층에 버그용 커스텀 타입이 있으면 → `type:<이름>`
   - 없으면(team-managed는 Subtask 1종만 지원) → `label:bug`
 
 판별에 실패하면 `label:bug`로 폴백하되 **그 사실을 기록하고 사용자에게 알린다.**
 > 이 불확실성을 매 실행마다 만나지 않고 초기화 1회로 가두는 것이 이 단계의 목적이다.
+
+## 4-b. 스프린트 배치 방침
+`sprint_field`를 찾았으면 **마감이 만드는 태스크를 어디에 둘지** 받아 `state.json`의 `sprint_mode`에 쓴다.
+
+- `active` (**기본**) — 활성 스프린트에 넣는다
+- `backlog` — 백로그에 둔다
+- `ask` — 매번 묻는다
+
+기본이 `active`인 이유: 마감이 만드는 태스크는 **이미 하고 있거나 끝난 일**에서 나온다. 백로그로 보내면 "안 할 일" 더미에 진행 중인 일이 섞이고, 스프린트 보드만 보는 팀원에게는 존재하지 않는 일이 된다.
+
+활성 스프린트가 있는지 이 자리에서 확인해 알린다.
+```
+project = {KEY} AND sprint in openSprints()
+```
+0건이면 `sprint_mode`가 `active`여도 백로그로 간다는 사실을 미리 알린다. `sprint_field`가 `null`이면 이 단계를 건너뛴다.
 
 ## 5. Epic 전제 확인
 나에게 할당된 태스크 표본의 `parent`가 Epic인지 확인한다. Epic이 아니면 **경고만 하고 계속 진행**한다 — 과제별 구획이 동작하지 않는다는 점을 알린다.
@@ -64,9 +80,11 @@ python3 <plugin>/scripts/new_title.py --state <새 state.json> --summary "확인
 {"schema_version": 3, "watermark": "<현재 시각 ISO8601>", "last_success": null,
  "project_key": "...", "epic_key": null, "epic_name": null,
  "title_include": [], "title_exclude": [], "title_prefix": null,
- "issue_type_map": {...}, "roots": {}}
+ "sprint_mode": "active",
+ "issue_type_map": {"...": "...", "sprint_field": "customfield_100nn"},
+ "roots": {}}
 ```
-이미 있으면 `project_key`·`epic_key`·`epic_name`·`title_include`·`title_exclude`·`title_prefix`·`issue_type_map`만 갱신하고 나머지는 **보존**한다.
+이미 있으면 `project_key`·`epic_key`·`epic_name`·`title_include`·`title_exclude`·`title_prefix`·`sprint_mode`·`issue_type_map`만 갱신하고 나머지는 **보존**한다.
 
 `schema_version`이 3보다 낮으면 3으로 올리면서 빠진 항목을 기본값(`null`, `[]`)으로 채운다. `watermark`와 `roots`는 그대로 둔다 — 마이그레이션이 기록을 지우면 안 된다.
 
@@ -78,4 +96,4 @@ python3 <plugin>/scripts/new_title.py --state <새 state.json> --summary "확인
 0건이면 JQL·권한·프로젝트 키를 점검하도록 안내한다.
 
 ---
-마지막에 요약 표(작업 폴더 / 프로젝트 키 / **에픽** / **제목 필터·접두사** / 프로젝트 유형 / 버그 표시 방식 / 이슈 건수 / 예약 등록 여부)를 보여준다.
+마지막에 요약 표(작업 폴더 / 프로젝트 키 / **에픽** / **제목 필터·접두사** / **스프린트 배치** / 프로젝트 유형 / 버그 표시 방식 / 이슈 건수 / 예약 등록 여부)를 보여준다.
