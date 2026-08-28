@@ -71,6 +71,14 @@ project = {KEY} AND sprint in openSprints()
 ```
 0건이면 `sprint_mode`가 `active`여도 백로그로 간다는 사실을 미리 알린다. `sprint_field`가 `null`이면 이 단계를 건너뛴다.
 
+## 4-c. 진행 중 전이 방침
+손댄 태스크를 "진행 중"으로 옮길지 받아 `transition_on_update`에 쓴다.
+
+- `in_progress` (**기본**) — 코멘트를 받거나 새로 만든 태스크가 아직 "해야 할 일"이면 "진행 중"으로 옮긴다
+- `none` — 상태를 건드리지 않는다
+
+**완료 전이는 어느 값에서도 하지 않는다.** 무엇이 끝났는지는 사람만 안다.
+
 ## 5. Epic 전제 확인
 나에게 할당된 태스크 표본의 `parent`가 Epic인지 확인한다. Epic이 아니면 **경고만 하고 계속 진행**한다 — 과제별 구획이 동작하지 않는다는 점을 알린다.
 
@@ -80,11 +88,11 @@ project = {KEY} AND sprint in openSprints()
 {"schema_version": 3, "watermark": "<현재 시각 ISO8601>", "last_success": null,
  "project_key": "...", "epic_key": null, "epic_name": null,
  "title_include": [], "title_exclude": [], "title_prefix": null,
- "sprint_mode": "active",
+ "sprint_mode": "active", "transition_on_update": "in_progress",
  "issue_type_map": {"...": "...", "sprint_field": "customfield_100nn"},
  "roots": {}}
 ```
-이미 있으면 `project_key`·`epic_key`·`epic_name`·`title_include`·`title_exclude`·`title_prefix`·`sprint_mode`·`issue_type_map`만 갱신하고 나머지는 **보존**한다.
+이미 있으면 `project_key`·`epic_key`·`epic_name`·`title_include`·`title_exclude`·`title_prefix`·`sprint_mode`·`transition_on_update`·`issue_type_map`만 갱신하고 나머지는 **보존**한다.
 
 `schema_version`이 3보다 낮으면 3으로 올리면서 빠진 항목을 기본값(`null`, `[]`)으로 채운다. `watermark`와 `roots`는 그대로 둔다 — 마이그레이션이 기록을 지우면 안 된다.
 
@@ -96,4 +104,4 @@ project = {KEY} AND sprint in openSprints()
 0건이면 JQL·권한·프로젝트 키를 점검하도록 안내한다.
 
 ---
-마지막에 요약 표(작업 폴더 / 프로젝트 키 / **에픽** / **제목 필터·접두사** / **스프린트 배치** / 프로젝트 유형 / 버그 표시 방식 / 이슈 건수 / 예약 등록 여부)를 보여준다.
+마지막에 요약 표(작업 폴더 / 프로젝트 키 / **에픽** / **제목 필터·접두사** / **스프린트 배치·진행 중 전이** / 프로젝트 유형 / 버그 표시 방식 / 이슈 건수 / 예약 등록 여부)를 보여준다.

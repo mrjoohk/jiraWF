@@ -177,6 +177,26 @@ def main():
     c("활성 스프린트 판별 — 지나간 것을 걸러낸다고 명시",
       'state == "active"' in close)
 
+    # ── 진행 중 전이 ─────────────────────────────────────────────
+    design = rd(os.path.join(_REPO, "DESIGN.md"))
+    c("transition_on_update — wf-init이 받고 close가 쓴다",
+      "transition_on_update" in init and "transition_on_update" in close)
+    c("전이 값 두 가지가 wf-init·close 양쪽에 있다",
+      all(v in init and v in close for v in ("`in_progress`", "`none`")))
+    c("전이 대상은 statusCategory 로 고른다(이름으로 찾지 않는다)",
+      '`new`' in close and 'statusCategory' in close
+      and 'to.statusCategory.key == "indeterminate"' in close)
+    c("완료 전이는 어디서도 하지 않는다고 close·DESIGN·AGENTS 가 함께 말한다",
+      "완료(Done) 전이는 절대 자동으로 하지 않는다" in close
+      and "완료 전이는 하지 않는다" in design
+      and "완료(Done) 전이를 자동으로 하지 않습니다" in agents,
+      "한 곳만 고치면 문서가 서로 다른 말을 하게 된다")
+    c("done 상태는 건드리지 않는다고 명시",
+      "`done`은 **건드리지 않는다**" in close)
+    c("전이는 반영 순서의 마지막", "진행 중 전이" in close and "전이가 마지막" in close)
+    c("README가 사용자에게 전이 동작을 알린다",
+      "해야 할 일" in readme and "진행 중" in readme and "완료 처리는 하지 않습니다" in readme)
+
     c("README가 설명한 세 갈래(새 태스크/병합/보류)가 close 스킬에 있다",
       all(k in readme and k in close for k in ("새 태스크", "병합", "보류")))
 

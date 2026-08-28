@@ -13,7 +13,8 @@ description: 오늘 일일 기록의 진행 메모를 읽어 Jira 코멘트·신
 1. **승인 없이 push하지 않는다.** 초안을 보여주고 사용자가 명시적으로 승인한 항목만 올린다.
 2. **이미 `jira_key`가 있는 항목은 다시 만들지 않는다.** 중복 티켓은 되돌리기 비용이 크다.
 3. **승인 시점에 `state.json`에 항목을 기록하고, push 성공 즉시 그 항목에 `jira_key`를 채운다.** 기록 전에 다음 항목으로 넘어가지 않는다 — 중간에 끊기면 무엇이 올라갔는지 알 수 없게 된다.
-4. 상태 전이(To Do → In Progress 등)는 **자동으로 하지 않는다.** 코멘트만 남긴다. 상태는 사람이 Jira에서 바꾼다. 이미 끝난 일을 신규 태스크로 만들 때도 마찬가지다 — 만들어만 두고 완료 처리는 사람이 한다.
+4. **완료(Done) 전이는 절대 자동으로 하지 않는다.** 무엇이 끝났는지는 사람만 안다. 이미 끝난 일을 신규 태스크로 만들 때도 만들어만 두고 완료 처리는 사람이 한다.
+4-1. **진행 중 전이는 `transition_on_update` 설정을 따른다**(기본 `in_progress`). 손댄 태스크가 아직 "해야 할 일"에 있으면 "진행 중"으로 옮긴다. 근거: 코멘트가 붙었다는 것은 그 일을 하고 있다는 뜻이고, 보드만 보는 팀원에게는 상태가 유일한 신호다. 되돌리기도 한 번의 전이로 끝난다 — 완료 전이와 달리 비용이 낮다.
 5. **새로 만든 메인 태스크에는 `"origin": "local"`을 기록한다.** Jira에서 발견한 root와 구별되어야 `INV-3`이 "승인 없이 만들어진 티켓"을 잡을 수 있다.
 
 ## 계층 규칙 (Jira 기본 3단을 전부 소진했다)
@@ -163,6 +164,22 @@ python3 <plugin>/scripts/merge_targets.py   --state .workflow/state.json --issue
 
 `unclear`는 **별도 구획으로 원문 그대로** 보여주고 사람이 분류하게 한다. 사람이 분류하지 않으면 그 줄은 메모에 그대로 남긴다 — 조용히 버리지 않는다. 서브에이전트가 판단을 못 한 줄이 아무 데도 안 남으면, 그날 적어둔 것이 사라졌다는 사실조차 남지 않는다.
 
+### 3-1. 전이 대상 확인
+`state.json`의 `transition_on_update`가 `in_progress`(기본)이면, **이번에 손대는 태스크 중 아직 시작 전인 것**을 추린다.
+
+대상: 코멘트를 받는 root, 그리고 이번에 새로 만드는 태스크.
+조건: 현재 `status.statusCategory.key`가 `new`인 것만. `indeterminate`는 이미 진행 중이고, `done`은 **건드리지 않는다** — 끝난 일에 코멘트를 다는 것과 그것을 다시 여는 것은 다른 판단이다.
+
+전이 ID는 프로젝트마다 다르므로 `getTransitionsForJiraIssue`로 조회해 **`to.statusCategory.key == "indeterminate"`인 것**을 고른다. 이름(`진행 중`·`In Progress`)으로 찾지 않는다 — 언어와 워크플로우에 따라 다르다.
+
+- 정확히 1개 → 그것을 쓴다
+- 0개 → 전이하지 않고 그 사실을 알린다
+- 2개 이상 → **묻는다.** 임의로 고르지 않는다
+
+승인 표에 `해야 할 일 → 진행 중`으로 함께 보인다. 항목별로 뺄 수 있다.
+
+`transition_on_update`가 `none`이면 이 단계를 통째로 건너뛴다.
+
 ### 4. 반영 (MCP)
 승인된 것만, **이 순서대로**. 신규 메인 태스크가 먼저다 — 그 키가 있어야 자식을 붙일 수 있다.
 
@@ -184,6 +201,7 @@ python3 <plugin>/scripts/merge_targets.py   --state .workflow/state.json --issue
 2. 코멘트 추가
 3. Sub-task 생성 → 반환된 키를 **즉시** 같은 레코드의 `jira_key`에 채운다
 4. 파생을 만들었으면 **메인 태스크에 그 사실을 코멘트로 남긴다**(보조 기록 — 없어도 `parent`로 추적되지만 일지 가독성에 쓰인다)
+5. **진행 중 전이** — 3-1에서 추리고 승인된 것만. 코멘트·티켓이 먼저이고 전이가 마지막이다. 전이가 실패해도 기록은 이미 올라가 있어야 한다(그 반대는 상태만 바뀌고 내용이 없는 상태를 남긴다). 실패한 전이는 다음 마감이 재시도한다 — 조건이 `statusCategory == new`이므로 여러 번 돌아도 안전하다.
 
 신규 메인 태스크도 같다 — `approved_at`은 있고 `jira_key`가 `null`이면 아직 안 만들어진 것이고, 다음 마감이 재시도한다. 다만 그 항목은 Jira에 없으므로 다음 일일 배치의 조회 결과에는 안 나온다. 재시도 전까지는 `roots`에만 남는다.
 
@@ -191,5 +209,5 @@ python3 <plugin>/scripts/merge_targets.py   --state .workflow/state.json --issue
 
 ### 5. 마무리
 - 처리된 메모 줄에 `✓ {jira_key}`를 덧붙인다(삭제하지 않는다 — 그날의 원본 기록이다).
-- `logs/{stamp}/evidence.json`에 최소 다음을 남긴다: `{"tool":"worklog-close","timestamp":...,"daily":...,"scope":{...},"comments_ok":n,"new_roots_ok":n,"merged_ok":n,"children_ok":n,"failed":[...],"keys_created":[...],"unclear_left":n}`. 나중에 문서가 인용할 수 있는 것은 이 파일뿐이다 — 콘솔 출력만 남기면 인용할 것이 없다.
+- `logs/{stamp}/evidence.json`에 최소 다음을 남긴다: `{"tool":"worklog-close","timestamp":...,"daily":...,"scope":{...},"comments_ok":n,"new_roots_ok":n,"merged_ok":n,"children_ok":n,"transitioned":[...],"failed":[...],"keys_created":[...],"unclear_left":n}`. 나중에 문서가 인용할 수 있는 것은 이 파일뿐이다 — 콘솔 출력만 남기면 인용할 것이 없다.
 - 실패한 항목은 **초안에 그대로 두고** 다음 실행에서 재시도 가능하게 한다.
