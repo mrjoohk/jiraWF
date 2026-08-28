@@ -391,7 +391,8 @@ check "현행 스키마는 그대로 통과한다" 0 "$?"
 
 echo "== 초안 문체 검사 =="
 # Jira 태스크는 팀에 사실을 공유하는 자리이지 설계 문서를 두는 곳이 아니다.
-# 문체는 기계가 판정할 수 없지만 "문서로 자란 표시"(머리말·표·길이)는 셀 수 있다.
+# 문체는 기계가 판정할 수 없지만 "문서로 자란 표시"(머리말·표·길이)와
+# "팀원이 못 여는 것을 가리키는 표시"(로컬 참조)는 셀 수 있다.
 setup
 python3 "$S/draft_lint.py" --draft "$HERE/fixtures/draft_causal.json" >/dev/null 2>&1
 check "인과형 본문은 지적 없이 통과한다" 0 "$?"
@@ -407,6 +408,46 @@ kinds={f["kind"] for f in d["findings"]}
 assert kinds == {"heading","table","length"}, kinds
 PY
 check "머리말·표·길이 세 가지를 각각 구별해 지적한다" 0 "$?"
+
+# 로컬 참조 — 작성자에게만 열리는 위치를 가리키면 승인 전에 보인다.
+python3 "$S/draft_lint.py" --draft "$HERE/fixtures/draft_localref.json" >/dev/null 2>&1
+check "로컬 경로·줄번호·지시어를 잡는다 (경고)" 1 "$?"
+
+python3 "$S/draft_lint.py" --draft "$HERE/fixtures/draft_localref.json" --json > "$W/lint2.json" 2>/dev/null
+python3 - "$W/lint2.json" <<'LINT2'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+kinds={f["kind"] for f in d["findings"]}
+assert kinds == {"local_ref"}, kinds          # 머리말·표·길이는 깨끗한 본문이다
+frags={x for f in d["findings"] for x in f["samples"]}
+assert "logs/" in frags and "aggregate.py" in frags, frags
+LINT2
+check "지적에 고쳐야 할 원문 조각을 함께 남긴다" 0 "$?"
+
+# 공유 링크와 이슈 키는 팀원이 열 수 있으므로 로컬 참조가 아니다.
+# 패턴을 넓게 잡아 이것까지 잡기 시작하면 여기서 깨진다.
+python3 - "$S" <<'LINT3'
+import sys, importlib.util
+spec = importlib.util.spec_from_file_location("dl", sys.argv[1] + "/draft_lint.py")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+assert m.local_refs("https://github.com/x/y/blob/main/README.md 참고") == []
+assert m.local_refs("XXX-142 에서 이어진다. IoU 0.062로 개선됐다.") == []
+assert m.local_refs("aggregate.py의 in_scope") != []      # 한글 조사가 붙어도 잡는다
+LINT3
+check "공유 링크·이슈 키는 지적하지 않는다" 0 "$?"
+
+# 길이 상한은 설명과 코멘트가 다르다. 같은 본문이 설명에서만 걸려야 한다 —
+# 상한을 하나로 되돌리면 이 검사가 깨진다.
+python3 "$S/draft_lint.py" --draft "$HERE/fixtures/draft_len_split.json" --json > "$W/lint4.json" 2>/dev/null
+python3 - "$W/lint4.json" <<'LINT4'
+import json,sys
+d=json.load(open(sys.argv[1],encoding='utf-8'))
+lens=[f for f in d["findings"] if f["kind"]=="length"]
+assert len(lens)==1, d["findings"]
+assert "설명" in lens[0]["where"], lens[0]
+assert "300자" in lens[0]["hint"], lens[0]
+LINT4
+check "같은 길이라도 설명만 걸린다 (설명 300 / 코멘트 600)" 0 "$?"
 
 python3 "$S/draft_lint.py" --draft "$W/없는파일.json" >/dev/null 2>&1
 check "초안을 못 읽으면 설정 오류(2)로 구별한다" 2 "$?"

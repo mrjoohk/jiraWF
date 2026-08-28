@@ -80,7 +80,7 @@ def main():
                     help="서브에이전트가 쓴 '지난 실행 이후 변동' 본문")
     ap.add_argument("--out", required=True)
     ap.add_argument("--state", required=True)
-    ap.add_argument("--version", default="0.5.6")
+    ap.add_argument("--version", default="0.5.8")
     a = ap.parse_args()
 
     agg = json.load(open(a.agg, encoding="utf-8"))

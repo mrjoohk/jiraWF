@@ -57,6 +57,7 @@ def main():
 
     SCHEMA_EXPECTED = 3
     LINT_MAX = 600
+    LINT_DESC_MAX = 300
     C = []
 
     def c(n, ok, d=""):
@@ -170,6 +171,14 @@ def main():
     c("문체 길이 상한 — 문서와 코드가 같은 값",
       f"MAX_CHARS = {LINT_MAX}" in lint and f"{LINT_MAX}자" in drafter
       and f"{LINT_MAX}자" in readme)
+    c("설명 길이 상한 — 설명은 코멘트보다 짧다고 코드·드래프터·README가 같이 말한다",
+      f"MAX_DESC_CHARS = {LINT_DESC_MAX}" in lint
+      and f"{LINT_DESC_MAX}자" in drafter and f"{LINT_DESC_MAX}자" in readme,
+      "상한을 하나로 되돌리면 여기서 걸린다")
+    c("로컬 참조 — 드래프터가 금지하고 lint가 세고 close가 승인 표에 보인다",
+      "팀원이 자기 자리에서 확인할 수 있는 것만 적는다" in drafter
+      and "local_ref" in lint and "local_ref" in close,
+      "읽는 사람이 못 여는 경로는 아무것도 전달하지 않는다")
     c("sprint_field — wf-init이 스키마로 찾고 close가 쓴다",
       "gh-sprint" in init and "sprint_field" in close)
     c("sprint_mode — 세 값이 wf-init·close 양쪽에 있다",
